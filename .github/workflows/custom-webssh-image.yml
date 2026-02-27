@@ -83,13 +83,14 @@ jobs:
         run: |
           set -euo pipefail
           if [ -f app/routes/ssh/console.tsx ]; then
+            sed -i 's#const origin = new URL(request.url).origin;#const origin = `http://127.0.0.1:${context.config.server.port}`;#g' app/routes/ssh/console.tsx
             sed -i 's#const assets = \["/wasm_exec.js", "/hp_ssh.wasm"\];#const assets = [`${__PREFIX__}/wasm_exec.js`, `${__PREFIX__}/hp_ssh.wasm`];#g' app/routes/ssh/console.tsx
             sed -i 's#href: "/hp_ssh.wasm",#href: `${__PREFIX__}/hp_ssh.wasm`,#g' app/routes/ssh/console.tsx
             sed -i 's#src: "/wasm_exec.js",#src: `${__PREFIX__}/wasm_exec.js`,#g' app/routes/ssh/console.tsx
             sed -i 's#WebAssembly.instantiateStreaming(fetch("/hp_ssh.wasm"), go.importObject).then((value) => {#WebAssembly.instantiateStreaming(fetch(`${__PREFIX__}/hp_ssh.wasm`), go.importObject).then((value) => {#g' app/routes/ssh/console.tsx
           fi
 
-          grep -nE 'assets = |hp_ssh\\.wasm|wasm_exec\\.js' app/routes/ssh/console.tsx || true
+          grep -nE 'const origin = |assets = |hp_ssh\\.wasm|wasm_exec\\.js' app/routes/ssh/console.tsx || true
 
       - name: Build and push
         uses: docker/build-push-action@v6
