@@ -20,6 +20,12 @@ on:
         required: false
         type: boolean
         default: false
+  schedule:
+    - cron: "17 */6 * * *"
+
+concurrency:
+  group: custom-webssh-image-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -30,10 +36,38 @@ jobs:
     name: Build and Push
     runs-on: ubuntu-latest
     steps:
-      - name: Check out the repo at selected ref
+      - name: Resolve target version and build options
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            source_ref='${{ inputs.source_ref }}'
+            image_tag='${{ inputs.image_tag }}'
+            platforms='${{ inputs.platforms }}'
+            push_latest='${{ inputs.push_latest_webssh }}'
+          else
+            source_ref="$(
+              curl -fsSL https://api.github.com/repos/tale/headplane/releases/latest \
+                | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])'
+            )"
+            clean="${source_ref#v}"
+            image_tag="${clean}-webssh"
+            platforms='linux/amd64'
+            push_latest='true'
+          fi
+
+          echo "source_ref=${source_ref}" >> "${GITHUB_OUTPUT}"
+          echo "image_tag=${image_tag}" >> "${GITHUB_OUTPUT}"
+          echo "platforms=${platforms}" >> "${GITHUB_OUTPUT}"
+          echo "push_latest=${push_latest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check out upstream source at selected ref
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_ref }}
+          repository: tale/headplane
+          ref: ${{ steps.target.outputs.source_ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -54,17 +88,31 @@ jobs:
         run: |
           set -euo pipefail
           base="ghcr.io/${GITHUB_REPOSITORY_OWNER}/headplane"
-          image="${base}:${{ inputs.image_tag }}"
+          image="${base}:${{ steps.target.outputs.image_tag }}"
           tags="${image}"
 
-          if [[ "${{ inputs.push_latest_webssh }}" == "true" ]]; then
+          if [[ "${{ steps.target.outputs.push_latest }}" == "true" ]]; then
             tags="${tags},${base}:latest-webssh"
           fi
 
           echo "image=${image}" >> "${GITHUB_OUTPUT}"
           echo "tags=${tags}" >> "${GITHUB_OUTPUT}"
 
+      - name: Skip if image already exists (scheduled runs)
+        id: exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${{ steps.prep.outputs.image }}"
+          if docker manifest inspect "$image" >/dev/null 2>&1; then
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+            echo "Image already exists: $image"
+          else
+            echo "exists=false" >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Apply WebSSH Dockerfile hotfix if needed
+        if: ${{ steps.exists.outputs.exists != 'true' || github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -79,6 +127,7 @@ jobs:
           grep -nE 'hp_ssh\\.wasm|wasm_exec\\.js' Dockerfile || true
 
       - name: Apply WebSSH prefix hotfix if needed
+        if: ${{ steps.exists.outputs.exists != 'true' || github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -93,6 +142,7 @@ jobs:
           grep -nE 'const origin = |assets = |hp_ssh\\.wasm|wasm_exec\\.js' app/routes/ssh/console.tsx || true
 
       - name: Build and push
+        if: ${{ steps.exists.outputs.exists != 'true' || github.event_name == 'workflow_dispatch' }}
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -100,17 +150,24 @@ jobs:
           target: final
           push: true
           tags: ${{ steps.prep.outputs.tags }}
-          platforms: ${{ inputs.platforms }}
+          platforms: ${{ steps.target.outputs.platforms }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
             IMAGE_TAG=${{ steps.prep.outputs.image }}
-            HEADPLANE_VERSION=${{ inputs.source_ref }}
+            HEADPLANE_VERSION=${{ steps.target.outputs.source_ref }}
 
       - name: Usage
         shell: bash
         run: |
           {
+            if [[ "${{ steps.exists.outputs.exists }}" == "true" && "${{ github.event_name }}" != "workflow_dispatch" ]]; then
+              echo "No build needed. Image already exists:"
+              echo ""
+              echo "- ${{ steps.prep.outputs.image }}"
+              exit 0
+            fi
+
             echo "Built and pushed:"
             echo ""
             echo "- ${{ steps.prep.outputs.tags }}"
