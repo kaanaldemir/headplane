@@ -64,6 +64,20 @@ jobs:
           echo "image=${image}" >> "${GITHUB_OUTPUT}"
           echo "tags=${tags}" >> "${GITHUB_OUTPUT}"
 
+      - name: Apply WebSSH Dockerfile hotfix if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -q '/run/app/hp_ssh.wasm' Dockerfile; then
+            echo "Applying Dockerfile hotfix: /run/app -> /run/public for WebSSH assets"
+            sed -i 's#/run/app/hp_ssh.wasm#/run/public/hp_ssh.wasm#g' Dockerfile
+            sed -i 's#/run/app/wasm_exec.js#/run/public/wasm_exec.js#g' Dockerfile
+          else
+            echo "Hotfix not needed for this source_ref"
+          fi
+
+          grep -nE 'hp_ssh\\.wasm|wasm_exec\\.js' Dockerfile
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
