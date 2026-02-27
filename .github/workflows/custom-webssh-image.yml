@@ -83,30 +83,10 @@ jobs:
         run: |
           set -euo pipefail
           if [ -f app/routes/ssh/console.tsx ]; then
-            python3 - <<'PY'
-            from pathlib import Path
-
-            p = Path("app/routes/ssh/console.tsx")
-            s = p.read_text(encoding="utf-8")
-            original = s
-
-            s = s.replace(
-                'const assets = ["/wasm_exec.js", "/hp_ssh.wasm"];',
-                'const assets = [`${__PREFIX__}/wasm_exec.js`, `${__PREFIX__}/hp_ssh.wasm`];'
-            )
-            s = s.replace('href: "/hp_ssh.wasm",', 'href: `${__PREFIX__}/hp_ssh.wasm`,')
-            s = s.replace('src: "/wasm_exec.js",', 'src: `${__PREFIX__}/wasm_exec.js`,')
-            s = s.replace(
-                'WebAssembly.instantiateStreaming(fetch("/hp_ssh.wasm"), go.importObject).then((value) => {',
-                'WebAssembly.instantiateStreaming(fetch(`${__PREFIX__}/hp_ssh.wasm`), go.importObject).then((value) => {'
-            )
-
-            if s != original:
-                p.write_text(s, encoding="utf-8")
-                print("Applied prefix hotfix in app/routes/ssh/console.tsx")
-            else:
-                print("Prefix hotfix not needed for this source_ref")
-            PY
+            sed -i 's#const assets = \["/wasm_exec.js", "/hp_ssh.wasm"\];#const assets = [`${__PREFIX__}/wasm_exec.js`, `${__PREFIX__}/hp_ssh.wasm`];#g' app/routes/ssh/console.tsx
+            sed -i 's#href: "/hp_ssh.wasm",#href: `${__PREFIX__}/hp_ssh.wasm`,#g' app/routes/ssh/console.tsx
+            sed -i 's#src: "/wasm_exec.js",#src: `${__PREFIX__}/wasm_exec.js`,#g' app/routes/ssh/console.tsx
+            sed -i 's#WebAssembly.instantiateStreaming(fetch("/hp_ssh.wasm"), go.importObject).then((value) => {#WebAssembly.instantiateStreaming(fetch(`${__PREFIX__}/hp_ssh.wasm`), go.importObject).then((value) => {#g' app/routes/ssh/console.tsx
           fi
 
           grep -nE 'assets = |hp_ssh\\.wasm|wasm_exec\\.js' app/routes/ssh/console.tsx || true
