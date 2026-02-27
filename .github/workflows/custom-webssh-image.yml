@@ -76,7 +76,7 @@ jobs:
             echo "Hotfix not needed for this source_ref"
           fi
 
-          grep -nE 'hp_ssh\\.wasm|wasm_exec\\.js' Dockerfile
+          grep -nE 'hp_ssh\\.wasm|wasm_exec\\.js' Dockerfile || true
 
       - name: Build and push
         uses: docker/build-push-action@v6
