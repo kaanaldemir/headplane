@@ -1,0 +1,93 @@
+name: Custom WebSSH Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Git ref to build (for example v0.6.2, v0.7.0, or main)
+        required: true
+        default: v0.6.2
+      image_tag:
+        description: Tag for ghcr.io/<owner>/headplane:<tag>
+        required: true
+        default: 0.6.2-webssh
+      platforms:
+        description: Comma-separated Docker platforms
+        required: true
+        default: linux/amd64
+      push_latest_webssh:
+        description: Also push ghcr.io/<owner>/headplane:latest-webssh
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  docker:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo at selected ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare image tags
+        id: prep
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="ghcr.io/${GITHUB_REPOSITORY_OWNER}/headplane"
+          image="${base}:${{ inputs.image_tag }}"
+          tags="${image}"
+
+          if [[ "${{ inputs.push_latest_webssh }}" == "true" ]]; then
+            tags="${tags},${base}:latest-webssh"
+          fi
+
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+          echo "tags=${tags}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: final
+          push: true
+          tags: ${{ steps.prep.outputs.tags }}
+          platforms: ${{ inputs.platforms }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            IMAGE_TAG=${{ steps.prep.outputs.image }}
+            HEADPLANE_VERSION=${{ inputs.source_ref }}
+
+      - name: Usage
+        shell: bash
+        run: |
+          {
+            echo "Built and pushed:"
+            echo ""
+            echo "- ${{ steps.prep.outputs.tags }}"
+            echo ""
+            echo "Pull on VPS:"
+            echo ""
+            echo "  docker pull ${{ steps.prep.outputs.image }}"
+          } >> "${GITHUB_STEP_SUMMARY}"
