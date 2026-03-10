@@ -140,6 +140,21 @@ jobs:
           fi
 
           grep -nE 'const origin = |assets = |hp_ssh\\.wasm|wasm_exec\\.js' app/routes/ssh/console.tsx || true
+      - name: Apply pre-auth user ID hotfix if needed
+        if: ${{ steps.exists.outputs.exists != 'true' || github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/server/headscale/api/endpoints/pre-auth-keys.ts')
+          if p.exists():
+              s = p.read_text()
+              s = s.replace('body.user = user;', 'body.user = /^\\d+$/.test(user) ? Number(user) : user;')
+              s = s.replace('user,\n      key,', 'user: /^\\d+$/.test(user) ? Number(user) : user,\n      key,')
+              p.write_text(s)
+          PY
+          grep -nE 'body\.user = |preauthkey/expire|Number\(user\)' app/server/headscale/api/endpoints/pre-auth-keys.ts || true
 
       - name: Build and push
         if: ${{ steps.exists.outputs.exists != 'true' || github.event_name == 'workflow_dispatch' }}
@@ -176,3 +191,5 @@ jobs:
             echo ""
             echo "  docker pull ${{ steps.prep.outputs.image }}"
           } >> "${GITHUB_STEP_SUMMARY}"
+
+

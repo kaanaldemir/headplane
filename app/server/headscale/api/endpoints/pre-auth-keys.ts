@@ -62,7 +62,7 @@ export default defineApiEndpoints<PreAuthKeyEndpoints>((client, apiKey) => ({
     };
 
     if (user) {
-      body.user = user;
+      body.user = /^\d+$/.test(user) ? Number(user) : user;
     }
 
     if (aclTags && aclTags.length > 0) {
@@ -78,7 +78,7 @@ export default defineApiEndpoints<PreAuthKeyEndpoints>((client, apiKey) => ({
 
   expirePreAuthKey: async (user, key) => {
     await client.apiFetch<void>("POST", "v1/preauthkey/expire", apiKey, {
-      user,
+      user: /^\d+$/.test(user) ? Number(user) : user,
       key,
     });
   },
